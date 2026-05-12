@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# gstack / tooling logs
+.gstack/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Exports / generated data
+*.csv
+*.db
