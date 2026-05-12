@@ -72,3 +72,19 @@ def test_llm_detector_missing_file_returns_false():
     matched, score = detector.detect("/nonexistent.jpg", LOGO)
     assert matched is False
     assert score == 0.0
+
+
+from trend_rover.vision import get_detector
+from trend_rover.config import Config
+
+
+def test_factory_returns_opencv_by_default():
+    config = Config()  # vision_engine = "opencv"
+    detector = get_detector(config)
+    assert isinstance(detector, OpenCVDetector)
+
+
+def test_factory_returns_llm_when_configured():
+    config = Config(vision_engine="llm", llm_provider="claude", llm_api_key="sk-x", llm_model="claude-sonnet-4-6")
+    detector = get_detector(config)
+    assert isinstance(detector, LLMDetector)
