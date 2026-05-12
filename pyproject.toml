@@ -22,3 +22,11 @@ trend-rover = "trend_rover.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[project.entry-points."claude_code.skills"]
+trend-rover = "trend_rover.skill"
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "trend_rover/**",
+]
