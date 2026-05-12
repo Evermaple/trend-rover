@@ -82,3 +82,72 @@ def test_query_filters_by_platform(db):
     results = db.query(keyword="Pokekara", platform="x")
     assert len(results) == 1
     assert results[0].feed_id == "x1"
+
+
+import csv
+import io
+from trend_rover.storage.export import export_csv
+
+
+def test_csv_export_single_platform(db):
+    feed = _make_feed(feed_id="v1", platform="youtube")
+    feed.views = 10000
+    feed.likes = 300
+    feed.comments = 50
+    feed.shares = 20
+    feed.bookmarks = 10
+    db.upsert(feed)
+
+    buf = io.StringIO()
+    export_csv(
+        db,
+        keyword="Pokekara",
+        platforms=["youtube"],
+        date_str="20260426",
+        output=buf,
+    )
+    buf.seek(0)
+    rows = list(csv.reader(buf))
+
+    assert rows[0] == ["媒体平台", "YouTube"]
+    assert rows[1] == ["日期", "20260426"]
+    assert rows[2] == ["关键词", "Pokekara"]
+    assert rows[3][0] == "视频/帖子数量"
+    assert int(rows[3][1]) == 1
+    assert rows[4][0] == "查看次数"
+    assert int(rows[4][1]) == 10000
+    assert rows[5][0] == "互动次数（转发，评论，点赞）"
+    assert int(rows[5][1]) == 370  # 20+50+300
+
+
+def test_csv_export_two_platforms(db):
+    yt = _make_feed(feed_id="v1", platform="youtube")
+    yt.views = 10000
+    yt.likes = 300
+    yt.comments = 50
+    yt.shares = 20
+    yt.bookmarks = 10
+    x_feed = _make_feed(feed_id="t1", platform="x")
+    x_feed.views = 2000
+    x_feed.likes = 100
+    x_feed.comments = 10
+    x_feed.shares = 5
+    x_feed.bookmarks = 3
+    db.upsert(yt)
+    db.upsert(x_feed)
+
+    buf = io.StringIO()
+    export_csv(
+        db,
+        keyword="Pokekara",
+        platforms=["youtube", "x"],
+        date_str="20260426",
+        output=buf,
+    )
+    buf.seek(0)
+    rows = list(csv.reader(buf))
+
+    assert rows[0] == ["媒体平台", "YouTube", "X"]
+    assert rows[3][0] == "视频/帖子数量"
+    assert int(rows[3][1]) == 1
+    assert int(rows[3][2]) == 1
