@@ -1,3 +1,4 @@
+import base64
 from enum import Enum
 from typing import Optional
 
@@ -21,45 +22,69 @@ class SortBy(str, Enum):
     RATING = "rating"
 
 
-# Pre-computed sp= values extracted from YouTube search UI.
-# Each key is (video_type, duration, sort_by) — None means "any".
-_SP_TABLE: dict[tuple, str] = {
-    # type only
-    (VideoType.VIDEO, None, None): "EgIQAQ%3D%3D",
-    (VideoType.SHORTS, None, None): "EgQQARgB",
-    (VideoType.LIVE, None, None): "EgJAAQ%3D%3D",
-    # duration only
-    (None, Duration.SHORT, None): "EgQQARgD",
-    (None, Duration.MEDIUM, None): "EgQQARgC",
-    (None, Duration.LONG, None): "EgQQARgE",
-    # sort only
-    (None, None, SortBy.UPLOAD_DATE): "CAI%3D",
-    (None, None, SortBy.VIEWS): "CAM%3D",
-    (None, None, SortBy.RATING): "CAE%3D",
-    # video + duration combos
-    (VideoType.VIDEO, Duration.SHORT, None): "EgQQARgD",
-    (VideoType.VIDEO, Duration.MEDIUM, None): "EgQQARgC",
-    (VideoType.VIDEO, Duration.LONG, None): "EgQQARgE",
-    # video + sort
-    (VideoType.VIDEO, None, SortBy.UPLOAD_DATE): "EgIQAUICCAI%3D",
-    (VideoType.VIDEO, None, SortBy.VIEWS): "EgIQAUICCAM%3D",
-    # video + duration + sort
-    (VideoType.VIDEO, Duration.SHORT, SortBy.UPLOAD_DATE): "EgQQARgDQgIIAg%3D%3D",
-    (VideoType.VIDEO, Duration.MEDIUM, SortBy.UPLOAD_DATE): "EgQQARgCQgIIAg%3D%3D",
-    (VideoType.VIDEO, Duration.LONG, SortBy.UPLOAD_DATE): "EgQQARgEQgIIAg%3D%3D",
-    (VideoType.VIDEO, Duration.SHORT, SortBy.VIEWS): "EgQQARgDQgIIAw%3D%3D",
-    (VideoType.VIDEO, Duration.MEDIUM, SortBy.VIEWS): "EgQQARgCQgIIAw%3D%3D",
-    (VideoType.VIDEO, Duration.LONG, SortBy.VIEWS): "EgQQARgEQgIIAw%3D%3D",
+class UploadDate(str, Enum):
+    HOUR = "hour"
+    TODAY = "today"
+    WEEK = "week"
+    MONTH = "month"
+    YEAR = "year"
+
+
+_SORT_BY_VALUE = {SortBy.RATING: 1, SortBy.UPLOAD_DATE: 2, SortBy.VIEWS: 3}
+_UPLOAD_DATE_VALUE = {
+    UploadDate.HOUR: 1, UploadDate.TODAY: 2, UploadDate.WEEK: 3,
+    UploadDate.MONTH: 4, UploadDate.YEAR: 5,
 }
+_DURATION_VALUE = {Duration.MEDIUM: 2, Duration.SHORT: 3, Duration.LONG: 4}
+
+
+def _encode_varint(val: int) -> bytes:
+    result = []
+    while val > 0x7F:
+        result.append((val & 0x7F) | 0x80)
+        val >>= 7
+    result.append(val)
+    return bytes(result)
+
+
+def _encode_varint_field(field_num: int, val: int) -> bytes:
+    tag = (field_num << 3) | 0
+    return bytes([tag]) + _encode_varint(val)
+
+
+def _encode_message_field(field_num: int, content: bytes) -> bytes:
+    tag = (field_num << 3) | 2
+    return bytes([tag, len(content)]) + content
 
 
 def build_sp_param(
     video_type: Optional[VideoType] = None,
     duration: Optional[Duration] = None,
     sort_by: Optional[SortBy] = None,
+    upload_date: Optional[UploadDate] = None,
 ) -> Optional[str]:
-    """Return the sp= URL parameter for the given filter combination, or None if no filters."""
-    if video_type is None and duration is None and (sort_by is None or sort_by == SortBy.RELEVANCE):
+    if (video_type is None and duration is None and upload_date is None
+            and (sort_by is None or sort_by == SortBy.RELEVANCE)):
         return None
-    key = (video_type, duration, sort_by if sort_by != SortBy.RELEVANCE else None)
-    return _SP_TABLE.get(key)
+
+    parts = b""
+
+    if sort_by and sort_by != SortBy.RELEVANCE:
+        parts += _encode_varint_field(1, _SORT_BY_VALUE[sort_by])
+
+    filters = b""
+    if upload_date:
+        filters += _encode_varint_field(1, _UPLOAD_DATE_VALUE[upload_date])
+    if video_type == VideoType.VIDEO:
+        filters += _encode_varint_field(2, 1)
+    elif video_type == VideoType.SHORTS:
+        filters += _encode_varint_field(2, 9)
+    if duration:
+        filters += _encode_varint_field(3, _DURATION_VALUE[duration])
+    if video_type == VideoType.LIVE:
+        filters += _encode_varint_field(8, 1)
+
+    if filters:
+        parts += _encode_message_field(2, filters)
+
+    return base64.b64encode(parts).decode()

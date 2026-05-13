@@ -124,7 +124,7 @@ class XScraper(BaseScraper):
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(user_agent=random_ua())
+            context = await browser.new_context(user_agent=random_ua(), locale="en-US")
 
             if self._config.x_cookies_file:
                 try:
@@ -135,17 +135,41 @@ class XScraper(BaseScraper):
                     pass
 
             page = await context.new_page()
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+            try:
+                await page.wait_for_selector(
+                    'article[data-testid="tweet"]', timeout=15000,
+                )
+            except Exception:
+                await browser.close()
+                return []
 
             tweet_data_list = []
             scroll_attempts = 0
-            max_scrolls = 10
+            max_scrolls = 20
+            prev_count = 0
+            stale_rounds = 0
 
-            while len(tweet_data_list) < limit and scroll_attempts < max_scrolls:
+            while scroll_attempts < max_scrolls:
                 items = await page.evaluate(_EXTRACT_TWEETS_JS)
-                tweet_data_list = items
+                seen_ids = {d.get("tweet_id") for d in tweet_data_list}
+                for item in items:
+                    if item.get("tweet_id") and item["tweet_id"] not in seen_ids:
+                        tweet_data_list.append(item)
+                        seen_ids.add(item["tweet_id"])
+
                 if len(tweet_data_list) >= limit:
                     break
+
+                if len(tweet_data_list) == prev_count:
+                    stale_rounds += 1
+                    if stale_rounds >= 3:
+                        break
+                else:
+                    stale_rounds = 0
+                prev_count = len(tweet_data_list)
+
                 await page.evaluate("window.scrollBy(0, window.innerHeight * 3)")
                 await page.wait_for_timeout(2000)
                 scroll_attempts += 1
@@ -176,9 +200,13 @@ class XScraper(BaseScraper):
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(user_agent=random_ua())
+            context = await browser.new_context(user_agent=random_ua(), locale="en-US")
             page = await context.new_page()
-            await page.goto(f"https://x.com/i/status/{feed_id}", wait_until="networkidle", timeout=30000)
+            await page.goto(f"https://x.com/i/status/{feed_id}", wait_until="domcontentloaded", timeout=60000)
+            try:
+                await page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
+            except Exception:
+                pass
             items = await page.evaluate(_EXTRACT_TWEETS_JS)
             await browser.close()
 
