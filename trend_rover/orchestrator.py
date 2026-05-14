@@ -83,9 +83,21 @@ def run_search(
 
 
 @dataclass
+class DailyStats:
+    date: str
+    count: int
+    views: int
+    likes: int
+    comments: int
+    shares: int
+    bookmarks: int
+
+
+@dataclass
 class StatsResult:
     keyword: str
     platform_totals: dict[str, dict]
+    platform_daily: dict[str, list[DailyStats]] = field(default_factory=dict)
 
 
 def run_stats(
@@ -97,6 +109,7 @@ def run_stats(
 ) -> StatsResult:
     db = Database(db_path)
     platform_totals: dict[str, dict] = {}
+    platform_daily: dict[str, list[DailyStats]] = {}
 
     for platform in platforms:
         feeds = db.query(
@@ -114,8 +127,25 @@ def run_stats(
             "bookmarks": sum(f.bookmarks for f in feeds),
         }
 
+        # Aggregate by date
+        daily: dict[str, dict] = {}
+        for f in feeds:
+            day = f.published_at.strftime("%Y-%m-%d")
+            if day not in daily:
+                daily[day] = {"count": 0, "views": 0, "likes": 0, "comments": 0, "shares": 0, "bookmarks": 0}
+            daily[day]["count"] += 1
+            daily[day]["views"] += f.views
+            daily[day]["likes"] += f.likes
+            daily[day]["comments"] += f.comments
+            daily[day]["shares"] += f.shares
+            daily[day]["bookmarks"] += f.bookmarks
+
+        platform_daily[platform] = [
+            DailyStats(date=d, **daily[d]) for d in sorted(daily)
+        ]
+
     db.close()
-    return StatsResult(keyword=keyword, platform_totals=platform_totals)
+    return StatsResult(keyword=keyword, platform_totals=platform_totals, platform_daily=platform_daily)
 
 
 def run_export(

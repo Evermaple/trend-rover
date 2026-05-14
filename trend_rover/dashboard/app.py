@@ -4,28 +4,6 @@ from typing import Optional
 
 _PLATFORM_DISPLAY_TO_KEY = {"YouTube": "youtube", "X": "x"}
 
-_STAT_ROWS = [
-    ("帖子数量", "count"),
-    ("查看次数", "views"),
-    ("点赞", "likes"),
-    ("评论", "comments"),
-    ("转发", "shares"),
-    ("收藏", "bookmarks"),
-]
-
-
-def format_stats_for_display(
-    platform_totals: dict,
-    platforms: list[str],
-) -> list[list]:
-    rows = []
-    for label, key in _STAT_ROWS:
-        row = [label]
-        for platform in platforms:
-            row.append(platform_totals.get(platform, {}).get(key, 0))
-        rows.append(row)
-    return rows
-
 
 def validate_date_range(since: str, until: str) -> Optional[str]:
     try:
@@ -113,12 +91,38 @@ def launch(port: int = 7860) -> None:
                 stats_since = gr.Textbox(label="Since (YYYY-MM-DD)", value=month_ago)
                 stats_until = gr.Textbox(label="Until (YYYY-MM-DD)", value=today)
             stats_btn = gr.Button("Get Stats", variant="primary")
-            stats_table = gr.Dataframe(label="Aggregated Stats")
+
+            with gr.Tabs():
+                with gr.Tab("YouTube"):
+                    yt_stats_table = gr.Dataframe(
+                        headers=["日期", "帖子数", "查看次数", "点赞", "评论", "转发", "收藏"],
+                        label="YouTube 每日统计",
+                    )
+                    yt_stats_chart = gr.LinePlot(
+                        x="日期", y="查看次数",
+                        title="YouTube 趋势",
+                        x_title="日期", y_title="数值",
+                        tooltip=["日期", "帖子数", "查看次数", "点赞", "评论"],
+                    )
+                with gr.Tab("X"):
+                    x_stats_table = gr.Dataframe(
+                        headers=["日期", "帖子数", "查看次数", "点赞", "评论", "转发", "收藏"],
+                        label="X 每日统计",
+                    )
+                    x_stats_chart = gr.LinePlot(
+                        x="日期", y="查看次数",
+                        title="X 趋势",
+                        x_title="日期", y_title="数值",
+                    )
 
             def do_stats(keyword, platforms_sel, since, until):
+                import pandas as pd
+
                 error = validate_date_range(since, until)
                 if error:
-                    return [[error]]
+                    empty = pd.DataFrame(columns=["日期", "帖子数", "查看次数", "点赞", "评论", "转发", "收藏"])
+                    return empty, empty, empty, empty
+
                 platforms = platforms_from_checkboxes(platforms_sel)
                 result = run_stats(
                     keyword=keyword,
@@ -126,11 +130,30 @@ def launch(port: int = 7860) -> None:
                     start_date=date.fromisoformat(since) if since else None,
                     end_date=date.fromisoformat(until) if until else None,
                 )
-                headers = ["指标"] + [p.upper() for p in platforms]
-                rows = format_stats_for_display(result.platform_totals, platforms)
-                return gr.Dataframe(value=rows, headers=headers)
 
-            stats_btn.click(do_stats, inputs=[stats_keyword, stats_platforms, stats_since, stats_until], outputs=[stats_table])
+                def daily_to_df(platform_key):
+                    rows = result.platform_daily.get(platform_key, [])
+                    if not rows:
+                        return pd.DataFrame(columns=["日期", "帖子数", "查看次数", "点赞", "评论", "转发", "收藏"])
+                    return pd.DataFrame([{
+                        "日期": r.date,
+                        "帖子数": r.count,
+                        "查看次数": r.views,
+                        "点赞": r.likes,
+                        "评论": r.comments,
+                        "转发": r.shares,
+                        "收藏": r.bookmarks,
+                    } for r in rows])
+
+                yt_df = daily_to_df("youtube")
+                x_df = daily_to_df("x")
+                return yt_df, yt_df, x_df, x_df
+
+            stats_btn.click(
+                do_stats,
+                inputs=[stats_keyword, stats_platforms, stats_since, stats_until],
+                outputs=[yt_stats_table, yt_stats_chart, x_stats_table, x_stats_chart],
+            )
 
         with gr.Tab("Detail"):
             with gr.Row():
