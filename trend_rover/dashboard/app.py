@@ -197,4 +197,7 @@ def launch(port: int = 7860) -> None:
 
             export_btn.click(do_export, inputs=[export_keyword, export_platforms, export_date], outputs=[export_file])
 
-    demo.launch(server_port=port, share=True)
+    demo.launch(server_name="0.0.0.0", server_port=port, share=False)
+
+if __name__ == "__main__":
+    launch()
